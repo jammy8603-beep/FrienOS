@@ -184,7 +184,7 @@ jobs:
           chmod +x frien-os/chroot/home/friend/Desktop/frenos-installer.desktop
           chown -R 1000:1000 frien-os/chroot/home/friend
 
-      - name: Build bootable FrienOS-0.1.0.iso
+      - name: Build bootable FrienOS-0.3.0.iso
         run: |
           sudo mksquashfs frien-os/chroot frien-os/iso/live/filesystem.squashfs -e boot
           sudo cp frien-os/chroot/boot/vmlinuz-* frien-os/iso/live/vmlinuz
@@ -200,11 +200,11 @@ jobs:
           EOF
           grub-mkrescue -o FrienOS-0.1.0.iso frien-os/iso
 
-      - name: Publish FrienOS-0.1.0.iso to Releases
+      - name: Publish FrienOS-0.3.0.iso to Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1.0
-          name: FrienOS v0.1.0
-          files: FrienOS-0.1.0.iso
+          tag_name: v0.3.0
+          name: FrienOS v0.3.0
+          files: FrienOS-0.3.0.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
