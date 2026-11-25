@@ -22,7 +22,7 @@ jobs:
           mkdir -p frien-os/{chroot,iso/live,iso/boot/grub}
           sudo debootstrap --arch=amd64 bookworm frien-os/chroot http://deb.debian.org/debian
 
-      - name: Install XFCE desktop and live-boot packages
+      - name: Install XFCE desktop, xinit, and live-boot packages
         run: |
           sudo mount --bind /dev frien-os/chroot/dev
           sudo mount --bind /dev/pts frien-os/chroot/dev/pts
@@ -37,11 +37,18 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends \
             linux-image-amd64 live-boot systemd-sysv \
-            xfce4 xfce4-terminal lightdm network-manager \
+            xfce4 xfce4-terminal lightdm xinit dbus-x11 network-manager \
             grub-pc-bin grub-efi-amd64-bin parted dosfstools e2fsprogs rsync \
             python3-gi gir1.2-gtk-3.0 sudo policykit-1
           useradd -m -s /bin/bash -G sudo,netdev friend
           echo "friend:friend" | chpasswd
+          mkdir -p /etc/lightdm/lightdm.conf.d
+          cat << 'LIGHTDM' > /etc/lightdm/lightdm.conf.d/50-frenos-autologin.conf
+          [Seat:*]
+          autologin-user=friend
+          autologin-user-timeout=0
+          user-session=xfce
+          LIGHTDM
           apt-get clean
           rm -rf /var/lib/apt/lists/*
           EOF
@@ -55,7 +62,7 @@ jobs:
           sudo umount frien-os/chroot/proc
           sudo umount frien-os/chroot/sys
 
-      - name: Add FrienOS GUI Installer
+      - name: Add FrienOS GUI Installer and Autostart
         run: |
           cat << 'EOF' | sudo tee frien-os/chroot/usr/local/bin/frenos-installer
           #!/usr/bin/env python3
@@ -170,6 +177,12 @@ jobs:
           Terminal=false
           Categories=System;
           EOF
+
+          mkdir -p frien-os/chroot/home/friend/Desktop frien-os/chroot/home/friend/.config/autostart
+          cp frien-os/chroot/usr/share/applications/frenos-installer.desktop frien-os/chroot/home/friend/Desktop/
+          cp frien-os/chroot/usr/share/applications/frenos-installer.desktop frien-os/chroot/home/friend/.config/autostart/
+          chmod +x frien-os/chroot/home/friend/Desktop/frenos-installer.desktop
+          chown -R 1000:1000 frien-os/chroot/home/friend
 
       - name: Build bootable FrienOS-0.1.0.iso
         run: |
