@@ -22,7 +22,7 @@ jobs:
           mkdir -p frien-os/{chroot,iso/live,iso/boot/grub}
           sudo debootstrap --arch=amd64 bookworm frien-os/chroot http://deb.debian.org/debian
 
-      - name: Install XFCE desktop, xinit, and live-boot packages
+      - name: Install XFCE desktop, Xorg, LightDM greeter, and live-boot packages
         run: |
           sudo mount --bind /dev frien-os/chroot/dev
           sudo mount --bind /dev/pts frien-os/chroot/dev/pts
@@ -34,14 +34,22 @@ jobs:
           set -e
           export DEBIAN_FRONTEND=noninteractive
           echo "FrienOS" > /etc/hostname
+          echo "127.0.1.1 FrienOS" >> /etc/hosts
+
           apt-get update
           apt-get install -y --no-install-recommends \
             linux-image-amd64 live-boot systemd-sysv \
-            xfce4 xfce4-terminal lightdm xinit dbus-x11 network-manager \
+            xserver-xorg xinit dbus-x11 \
+            xfce4 xfce4-terminal lightdm lightdm-gtk-greeter \
+            network-manager open-vm-tools open-vm-tools-desktop \
             grub-pc-bin grub-efi-amd64-bin parted dosfstools e2fsprogs rsync \
             python3-gi gir1.2-gtk-3.0 sudo policykit-1
+
           useradd -m -s /bin/bash -G sudo,netdev friend
           echo "friend:friend" | chpasswd
+
+          systemctl enable lightdm
+
           mkdir -p /etc/lightdm/lightdm.conf.d
           cat << 'LIGHTDM' > /etc/lightdm/lightdm.conf.d/50-frenos-autologin.conf
           [Seat:*]
@@ -49,6 +57,7 @@ jobs:
           autologin-user-timeout=0
           user-session=xfce
           LIGHTDM
+
           apt-get clean
           rm -rf /var/lib/apt/lists/*
           EOF
@@ -150,7 +159,7 @@ jobs:
                       self.set_status("Setting up user and bootloader...", 0.9)
                       for d in ("dev", "proc", "sys"):
                           subprocess.run(["mount", "--bind", f"/{d}", f"/mnt/target/{d}"], check=True)
-                      cmd = f"useradd -m -s /bin/bash -G sudo,netdev {user} || true; echo '{user}:{pw}' | chpasswd; grub-install --target=i386-pc {disk} || true; update-grub || true"
+                      cmd = f"useradd -m -s /bin/bash -G sudo,netdev {user} || true; echo '{user}:{pw}' | chpasswd; systemctl enable lightdm || true; grub-install --target=i386-pc {disk} || true; update-grub || true"
                       subprocess.run(["chroot", "/mnt/target", "/bin/bash", "-c", cmd], check=True)
                       for d in ("sys", "proc", "dev"):
                           subprocess.run(["umount", f"/mnt/target/{d}"], check=False)
@@ -184,7 +193,7 @@ jobs:
           chmod +x frien-os/chroot/home/friend/Desktop/frenos-installer.desktop
           chown -R 1000:1000 frien-os/chroot/home/friend
 
-      - name: Build bootable FrienOS-0.3.0.iso
+      - name: Build bootable FrienOS-0.4.0.iso
         run: |
           sudo mksquashfs frien-os/chroot frien-os/iso/live/filesystem.squashfs -e boot
           sudo cp frien-os/chroot/boot/vmlinuz-* frien-os/iso/live/vmlinuz
@@ -198,13 +207,13 @@ jobs:
               initrd /live/initrd
           }
           EOF
-          grub-mkrescue -o FrienOS-0.1.0.iso frien-os/iso
+          grub-mkrescue -o FrienOS-0.4.0.iso frien-os/iso
 
-      - name: Publish FrienOS-0.3.0.iso to Releases
-        uses: softprops/action-gh-release@v2
+      - name: Publish FrienOS-0.4.0.iso to Releases
+        uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.3.0
-          name: FrienOS v0.3.0
-          files: FrienOS-0.3.0.iso
+          tag_name: v0.4.0
+          name: FrienOS 0.4.0
+          files: FrienOS-0.4.0.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
