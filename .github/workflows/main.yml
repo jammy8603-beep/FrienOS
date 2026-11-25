@@ -1,0 +1,190 @@
+name: Build FrienOS ISO
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-iso:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            debootstrap squashfs-tools xorriso grub-pc-bin grub-efi-amd64-bin mtools \
+            python3-gi gir1.2-gtk-3.0 parted dosfstools e2fsprogs rsync
+
+      - name: Bootstrap Debian base for FrienOS
+        run: |
+          mkdir -p frien-os/{chroot,iso/live,iso/boot/grub}
+          sudo debootstrap --arch=amd64 bookworm frien-os/chroot http://deb.debian.org/debian
+
+      - name: Install XFCE desktop and live-boot packages
+        run: |
+          sudo mount --bind /dev frien-os/chroot/dev
+          sudo mount --bind /dev/pts frien-os/chroot/dev/pts
+          sudo mount -t proc proc frien-os/chroot/proc
+          sudo mount -t sysfs sys frien-os/chroot/sys
+
+          cat << 'EOF' | sudo tee frien-os/chroot/setup.sh
+          #!/bin/bash
+          set -e
+          export DEBIAN_FRONTEND=noninteractive
+          echo "FrienOS" > /etc/hostname
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            linux-image-amd64 live-boot systemd-sysv \
+            xfce4 xfce4-terminal lightdm network-manager \
+            grub-pc-bin grub-efi-amd64-bin parted dosfstools e2fsprogs rsync \
+            python3-gi gir1.2-gtk-3.0 sudo policykit-1
+          useradd -m -s /bin/bash -G sudo,netdev friend
+          echo "friend:friend" | chpasswd
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+          EOF
+
+          sudo chmod +x frien-os/chroot/setup.sh
+          sudo chroot frien-os/chroot /setup.sh
+          sudo rm frien-os/chroot/setup.sh
+
+          sudo umount frien-os/chroot/dev/pts
+          sudo umount frien-os/chroot/dev
+          sudo umount frien-os/chroot/proc
+          sudo umount frien-os/chroot/sys
+
+      - name: Add FrienOS GUI Installer
+        run: |
+          cat << 'EOF' | sudo tee frien-os/chroot/usr/local/bin/frenos-installer
+          #!/usr/bin/env python3
+          import gi, os, subprocess, threading
+          gi.require_version("Gtk", "3.0")
+          from gi.repository import Gtk, GLib
+
+          class FrienOSInstaller(Gtk.Window):
+              def __init__(self):
+                  super().__init__(title="FrienOS Graphical Installer")
+                  self.set_default_size(520, 380)
+                  self.set_border_width(16)
+                  box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+                  self.add(box)
+
+                  header = Gtk.Label()
+                  header.set_markup("<big><b>Welcome to FrienOS</b></big>\nInstall FrienOS to a target drive")
+                  header.set_xalign(0)
+                  box.pack_start(header, False, False, 4)
+
+                  box.pack_start(Gtk.Label(label="Target Disk (WARNING: Will be erased):", xalign=0), False, False, 0)
+                  self.disk_combo = Gtk.ComboBoxText()
+                  out = subprocess.check_output(["lsblk", "-dn", "-o", "NAME,SIZE,MODEL"], text=True)
+                  for line in out.strip().splitlines():
+                      parts = line.split(None, 2)
+                      if parts:
+                          self.disk_combo.append_text(f"/dev/{parts[0]} — {' '.join(parts[1:])}")
+                  if len(self.disk_combo.get_model()) > 0:
+                      self.disk_combo.set_active(0)
+                  box.pack_start(self.disk_combo, False, False, 0)
+
+                  box.pack_start(Gtk.Label(label="Username:", xalign=0), False, False, 0)
+                  self.user_entry = Gtk.Entry()
+                  self.user_entry.set_text("friend")
+                  box.pack_start(self.user_entry, False, False, 0)
+
+                  box.pack_start(Gtk.Label(label="Password:", xalign=0), False, False, 0)
+                  self.pass_entry = Gtk.Entry()
+                  self.pass_entry.set_visibility(False)
+                  box.pack_start(self.pass_entry, False, False, 0)
+
+                  self.progress = Gtk.ProgressBar()
+                  box.pack_start(self.progress, False, False, 6)
+                  self.status_label = Gtk.Label(label="Ready to install.", xalign=0)
+                  box.pack_start(self.status_label, False, False, 0)
+
+                  self.install_btn = Gtk.Button(label="Install FrienOS")
+                  self.install_btn.connect("clicked", self.on_install)
+                  box.pack_start(self.install_btn, False, False, 8)
+
+              def set_status(self, text, frac=None):
+                  def _u():
+                      self.status_label.set_text(text)
+                      if frac is not None:
+                          self.progress.set_fraction(frac)
+                  GLib.idle_add(_u)
+
+              def on_install(self, _):
+                  active = self.disk_combo.get_active_text()
+                  user = self.user_entry.get_text().strip()
+                  pw = self.pass_entry.get_text()
+                  if not active or not user or not pw:
+                      self.status_label.set_text("Fill in disk, username, and password.")
+                      return
+                  disk = active.split()[0]
+                  self.install_btn.set_sensitive(False)
+                  threading.Thread(target=self.run_install, args=(disk, user, pw), daemon=True).start()
+
+              def run_install(self, disk, user, pw):
+                  try:
+                      self.set_status(f"Partitioning {disk}...", 0.2)
+                      subprocess.run(["parted", "-s", disk, "mklabel", "gpt"], check=True)
+                      subprocess.run(["parted", "-s", disk, "mkpart", "primary", "ext4", "1MiB", "100%"], check=True)
+                      part = f"{disk}p1" if disk[-1].isdigit() else f"{disk}1"
+                      subprocess.run(["partprobe", disk], check=False)
+
+                      self.set_status(f"Formatting {part}...", 0.4)
+                      subprocess.run(["mkfs.ext4", "-F", part], check=True)
+                      os.makedirs("/mnt/target", exist_ok=True)
+                      subprocess.run(["mount", part, "/mnt/target"], check=True)
+
+                      self.set_status("Installing FrienOS files...", 0.7)
+                      subprocess.run(["rsync", "-aHAX", "--exclude=/proc", "--exclude=/sys", "--exclude=/dev", "--exclude=/run", "--exclude=/mnt", "--exclude=/tmp", "/", "/mnt/target"], check=True)
+
+                      self.set_status("Setting up user and bootloader...", 0.9)
+                      for d in ("dev", "proc", "sys"):
+                          subprocess.run(["mount", "--bind", f"/{d}", f"/mnt/target/{d}"], check=True)
+                      cmd = f"useradd -m -s /bin/bash -G sudo,netdev {user} || true; echo '{user}:{pw}' | chpasswd; grub-install --target=i386-pc {disk} || true; update-grub || true"
+                      subprocess.run(["chroot", "/mnt/target", "/bin/bash", "-c", cmd], check=True)
+                      for d in ("sys", "proc", "dev"):
+                          subprocess.run(["umount", f"/mnt/target/{d}"], check=False)
+                      subprocess.run(["umount", "/mnt/target"], check=False)
+
+                      self.set_status("Done! Reboot your computer to use FrienOS.", 1.0)
+                  except Exception as e:
+                      self.set_status(f"Error: {e}", 0.0)
+                      GLib.idle_add(self.install_btn.set_sensitive, True)
+
+          win = FrienOSInstaller()
+          win.connect("destroy", Gtk.main_quit)
+          win.show_all()
+          Gtk.main()
+          EOF
+          sudo chmod +x frien-os/chroot/usr/local/bin/frenos-installer
+
+          cat << 'EOF' | sudo tee frien-os/chroot/usr/share/applications/frenos-installer.desktop
+          [Desktop Entry]
+          Type=Application
+          Name=Install FrienOS
+          Exec=pkexec /usr/local/bin/frenos-installer
+          Icon=system-software-install
+          Terminal=false
+          Categories=System;
+          EOF
+
+      - name: Build FrienOS.iso
+        run: |
+          sudo mksquashfs frien-os/chroot frien-os/iso/live/filesystem.squashfs -e boot
+          sudo cp frien-os/chroot/boot/vmlinuz-* frien-os/iso/live/vmlinuz
+          sudo cp frien-os/chroot/boot/initrd.img-* frien-os/iso/live/initrd
+          cat << 'EOF' > frien-os/iso/boot/grub/grub.cfg
+          set default=0
+          set timeout=5
+          menuentry "FrienOS Live & Installer" {
+              linux /live/vmlinuz boot=live quiet splash
+              initrd /live/initrd
+          }
+          EOF
+          grub-mkrescue -o FrienOS.iso frien-os/iso
+
+      - name: Upload FrienOS.iso Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FrienOS-ISO
+          path: FrienOS.iso
