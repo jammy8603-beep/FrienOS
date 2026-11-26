@@ -1,60 +1,55 @@
 # FrienOS (Beta)
 
-> **Beta Notice:** FrienOS (`v0.4.0`) is currently in **beta**. Features, installer behavior, and system configurations are under active development—use in a virtual machine or on dedicated test hardware rather than a primary workstation.
+> **Beta Notice:** FrienOS (`0.6.0-beta`) is an early **beta** release in active development. Test it in a virtual machine rather than on a primary computer.
 
-FrienOS is a lightweight, 64-bit (`amd64`) Debian 12-based live and installable Linux operating system featuring an XFCE desktop environment, automated live login, and a custom GTK 3 graphical installer, built automatically via GitHub Actions.
+FrienOS is a 64-bit (`x86_64`) operating system that boots via GRUB Multiboot2 into a `1024x768x32` graphical framebuffer interface and setup/login screen.
 
 ---
 
 ## Features
 
-* **Debian 12 (`bookworm`) Base:** Built from scratch using `debootstrap` with the `amd64` Linux kernel and `live-boot`.
-* **XFCE Graphical Desktop:** Preconfigured with `xfce4`, `xserver-xorg`, `lightdm`, `lightdm-gtk-greeter`, and automatic live login.
-* **Custom GTK 3 Installer (`frenos-installer`):** Graphical system installer with desktop and autostart launchers that handles GPT partitioning, `ext4` formatting, system file cloning (`rsync`), user creation, and GRUB bootloader installation.
-* **Dual BIOS & UEFI Boot:** Packaged into a bootable hybrid `.iso` via `grub-mkrescue` and `squashfs-tools`.
-* **VMware Ready:** Includes `open-vm-tools` and `open-vm-tools-desktop` out of the box for clipboard sharing and display scaling.
-* **Automated CI/CD Builds:** GitHub Actions workflow (`.github/workflows/build-iso.yml`) compiles the live filesystem and publishes release ISOs automatically.
+* **64-Bit (`x86_64`) Kernel:** Uses a custom Multiboot2 entry, 64-bit Long Mode transition, and C kernel (`frenos.bin`).
+* **Direct Graphical Framebuffer Boot:** Requests a `1024x768x32` linear framebuffer and draws the desktop backdrop, top bar, and centered setup/login window on boot.
+* **Lightweight Startup:** Runs a direct graphical boot path suited for fast virtual machine testing.
+* **Automated ISO Builds:** Uses GitHub Actions to assemble, compile, link, and package a bootable `.iso` via `grub-mkrescue`.
 
 ---
 
-## Default Live Credentials
+## What Changed Since Earlier Builds
 
-* **Username:** `friend`
-* **Password:** `friend` *(Note: Terminal password prompts hide typed characters by design.)*
+* **New 64-Bit Kernel & Boot Path:** Replaced the previous setup with a Multiboot2 `x86_64` kernel that renders directly to the framebuffer.
+* **Fixed Text-Console (`tty1`) Boot Fallback:** Resolved startup issues that previously dropped boots to a command-line login prompt (`tty1`) instead of opening the graphical screen.
 
 ---
 
 ## System Requirements
 
-* **Architecture:** 64-bit (`x86_64` / `amd64`) processor (2+ vCPUs recommended)
-* **RAM (Memory):** 2 GB minimum (required for live `initramfs` unpacking); 4 GB recommended
-* **Storage:** 10 GB minimum disk space for installation (20–25 GB recommended)
-* **Display & Network:** 1024×768 minimum display resolution; standard Ethernet/virtual NIC (e.g., Intel E1000)
+* **Architecture:** 64-bit (`x86_64`) processor or virtual machine
+* **RAM:** 2 GB recommended
+* **Graphics:** Standard VESA / UEFI linear framebuffer support (`1024x768` or higher)
+* **Virtualization:** VMware Fusion or compatible `x86_64` hypervisor
 
 ---
 
 ## Quick Start (Virtual Machine)
 
-1. Download the latest `FrienOS-*.iso` release from the **Releases** page.
-2. Create a new 64-bit Debian/Linux virtual machine with at least **2 GB RAM** and a **10+ GB virtual hard drive**.
-3. Attach the downloaded `.iso` file to the VM's CD/DVD drive and ensure **Connect CD/DVD Drive** is enabled.
-4. Power on the VM to boot into the live XFCE desktop.
-5. Launch **Install FrienOS** (from the desktop shortcut or autostart window) to partition and install FrienOS to your virtual drive.
-6. Once installation finishes, power off the VM, disconnect/remove the `.iso` from the CD/DVD drive, and power on to boot from your installed disk.
+1. Download the `FrienOS-*.iso` release image from the **Releases** page.
+2. Create or open a 64-bit virtual machine with at least **2 GB RAM** and attach the `.iso` to its CD/DVD drive with the drive connected.
+3. Power on the virtual machine and select **FrienOS** in the boot menu to launch into the graphical screen.
 
 ---
 
 ## Building from Source
 
-FrienOS is built using GitHub Actions on `ubuntu-24.04`:
-
-1. Fork or clone this repository.
-2. Navigate to the **Actions** tab on GitHub.
-3. Select **Build FrienOS ISO** and click **Run workflow**.
-4. Once complete, download the generated `.iso` artifact from **Releases**.
+1. Clone or open the repository containing the bootloader, linker script, kernel source, and `.github/workflows/build-iso.yml`.
+2. Run the **Build FrienOS** workflow in the **Actions** tab on GitHub.
+3. Download the resulting `.iso` asset from the published release once the workflow finishes.
 
 ---
 
-## Project Structure
+## Project Layout
 
-* `.github/workflows/build-iso.yml` — Automated build pipeline that bootstraps Debian 12, installs desktop/installer packages, generates `filesystem.squashfs`, builds the bootable ISO with `grub-mkrescue`, and publishes the GitHub release.
+* `src/boot.asm` — Multiboot2 header, page tables, and 64-bit Long Mode entry.
+* `src/kernel.c` — Framebuffer discovery and graphical desktop/window rendering.
+* `src/linker.ld` — Kernel memory layout and section placement.
+* `.github/workflows/build-iso.yml` — Automated build and release pipeline for the bootable ISO.
