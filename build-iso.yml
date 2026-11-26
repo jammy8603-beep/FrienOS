@@ -181,7 +181,7 @@ jobs:
           [Desktop Entry]
           Type=Application
           Name=Install FrienOS
-          Exec=pkexec /usr/local/bin/frenos-installer
+          Exec=xfce4-terminal -e "sudo /usr/local/bin/frenos-installer"
           Icon=system-software-install
           Terminal=false
           Categories=System;
@@ -193,7 +193,7 @@ jobs:
           chmod +x frien-os/chroot/home/friend/Desktop/frenos-installer.desktop
           chown -R 1000:1000 frien-os/chroot/home/friend
 
-      - name: Build bootable FrienOS-0.4.0.iso
+      - name: Build bootable FrienOS-0.5.0-beta.iso
         run: |
           sudo mksquashfs frien-os/chroot frien-os/iso/live/filesystem.squashfs -e boot
           sudo cp frien-os/chroot/boot/vmlinuz-* frien-os/iso/live/vmlinuz
@@ -207,13 +207,13 @@ jobs:
               initrd /live/initrd
           }
           EOF
-          grub-mkrescue -o FrienOS-0.4.0.iso frien-os/iso
+          grub-mkrescue -o FrienOS-0.5.0-beta.iso frien-os/iso
 
-      - name: Publish FrienOS-0.4.0.iso to Releases
+      - name: Publish FrienOS-0.5.0-beta.iso to Releases
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v0.4.0
-          name: FrienOS 0.4.0
-          files: FrienOS-0.4.0.iso
+          tag_name: v0.5.0-beta
+          name: FrienOS Beta 5
+          files: FrienOS-0.5.0-beta.iso
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
